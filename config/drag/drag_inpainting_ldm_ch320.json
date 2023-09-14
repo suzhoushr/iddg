@@ -1,0 +1,93 @@
+{
+    "name": "ldm_sz256_label1000", // experiments name
+    "gpu_ids": [0], // gpu ids list, default is single 0
+    "seed" : -1, // random seed, seed <0 represents randomization not used 
+
+    "path": { //set every part file path
+        "resume_state": "experiments/train_ldm_sz256_label1000_ch320/checkpoint/232" 
+    },
+    "model": { 
+        "which_networks": [ 
+            {
+                "name": ["models.ddpm", "DDPM"],
+                "lora_config": {
+                    "flag": "ft",  // ft | infer | not_use
+                    "loras": null,
+                    "target_replace_module": ["CrossAttention", "Attention", "GEGLU"],
+                    "lora_rank": 16,
+                    "lora_dropout_p": 0.1,
+                    "lora_scale": 2.0,
+                    "lora_steps": 200,
+                    "lora_lr": 0.0002
+                },
+                "args": { 
+                    "init_type": "kaiming", 
+                    "module_name": "sd_v15", 
+                    "sample_type": "ddim",
+                    "sample_timesteps": 100,
+                    "use_cond": false,
+                    "use_ldm": true,
+                    "ddconfig": {
+                        "double_z": true,
+                        "z_channels": 4,
+                        "resolution": 256,
+                        "in_channels": 3,
+                        "out_ch": 3,
+                        "ch": 128,
+                        "ch_mult": [1, 2, 4, 4],
+                        "num_res_blocks": 2,
+                        "attn_resolutions": [],
+                        "dropout": 0.0
+                    },                    
+                    "cond": {
+                        "context_dim": 768,
+                        "num_classes": 1000
+                    },
+                    "unet": {
+                        "image_size": 32, 
+                        "in_channels": 5, 
+                        "model_channels": 320,
+                        "out_channels": 4, 
+                        "num_res_blocks": 2,  
+                        "attention_resolutions": [ 
+                            4,
+                            2,
+                            1
+                        ],
+                        "dropout": 0.1,                 
+                        "channel_mult": [                  
+                            1,
+                            2,
+                            4,
+                            4
+                        ],
+                        "conv_resample": true,              // true
+                        "dims": 2,                           // None
+                        "num_classes": 1000,                // 100
+                        "use_checkpoint": true,            // false
+                        "use_fp16": false,                  // false
+                        "num_heads": 8,                     // 1
+                        "num_head_channels": -1,            // 32
+                        "num_heads_upsample": -1,           // -1
+                        "use_scale_shift_norm": true,      // true
+                        "resblock_updown": true,           // true, it is very strange that the loss could not decrease when this value set to false 
+                        "use_new_attention_order": false,   // false
+                        "use_spatial_transformer": false,    // custom transformer support
+                        "transformer_depth": 1,             // custom transformer support
+                        "context_dim": null,                 // custom transformer support
+                        "n_embed": null,                    // custom support for prediction of discrete ids into codebook of first stage vq model
+                        "legacy": false                     // None
+                    },
+                    "beta_schedule": {
+                        "test": {
+                            "schedule": "linear",
+                            "n_timestep": 1000,
+                            "linear_start": 1e-6,
+                            "linear_end": 0.02
+                        }
+                    }
+                }
+            }
+        ]
+    }
+}
