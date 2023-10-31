@@ -11,8 +11,6 @@ taming
 taming/*
 src/
 src/*
-config/train
-config/train/*
 demo*.py
 *.jpg
 !experiments/clean.sh
