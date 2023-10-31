@@ -12,7 +12,7 @@ import pdb
 CustomResult = collections.namedtuple('CustomResult', 'name result')
 
 class BaseModel():
-    def __init__(self, opt, phase_loader, val_loader, metrics, logger, writer):
+    def __init__(self, opt, phase_loader, val_loader, metrics, logger, writer, **kwargs):
         """ init model with basic input, which are from __init__(**kwargs) function in inherited class """
         self.opt = opt
         self.phase = opt['phase']
@@ -107,6 +107,8 @@ class BaseModel():
         
         if isinstance(network, nn.DataParallel) or isinstance(network, nn.parallel.DistributedDataParallel):
             network = network.module
+        save_filename = '{}_{}.pth'.format(self.epoch, network_label)
+        save_path = os.path.join(self.opt['path']['checkpoint'], save_filename)
         
         lora_config = None
         if 'lora_config' in self.opt["model"]["which_model"]["args"]:
@@ -189,7 +191,9 @@ class BaseModel():
 
     def resume_training(self):
         """ resume the optimizers and schedulers for training, only work when phase is test or resume training enable """
-        if self.phase !='train' or self. opt['path']['resume_state'] is None:
+        if self.phase !='train' or self.opt['path']['resume_state'] is None:
+            return
+        if self.opt['model']['which_model']['args']['stage'] == 'finetune':
             return
         self.logger.info('Beign loading training states'.format())
         assert isinstance(self.optimizers, list) and isinstance(self.schedulers, list), 'optimizers and schedulers must be a list.'

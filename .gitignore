@@ -3,6 +3,8 @@ experiments
 experiments/*
 datasets
 datasets/*
+openai/
+openai/*
 test
 test/*
 taming

@@ -8,7 +8,7 @@ from core.base_network import BaseNetwork
 from copy import deepcopy
 import pdb
 
-class DDPM(BaseNetwork):
+class MLDM(BaseNetwork):
     def __init__(self, unet, beta_schedule, 
                  module_name='sd_v15', 
                  sample_type='ddim', 
@@ -18,7 +18,7 @@ class DDPM(BaseNetwork):
                  ddconfig=None,                 
                  cond=None,
                  **kwargs):
-        super(DDPM, self).__init__(**kwargs)
+        super(MLDM, self).__init__(**kwargs)
         self.cond_fn = None
         self.first_stage_fn = None
         self.denoise_fn = None
@@ -29,9 +29,12 @@ class DDPM(BaseNetwork):
             sys.path.append('./models/sd_v15_modules')
             from models.sd_v15_modules.unet import UNet
 
+            self.denoise_fn = UNet(**unet)
+
             if use_cond:
-                from models.sd_v15_modules.ldm.modules.encoders.modules import ClassEmbedder
-                self.cond_fn = ClassEmbedder(embed_dim=cond['context_dim'] ,n_classes=cond['num_classes'])
+                from models.sd_v15_modules.ldm.modules.encoders.modules import FrozenCLIPEmbedder
+                self.cond_fn = FrozenCLIPEmbedder()
+                self.cond_fn.freeze()
 
             if use_ldm:
                 from models.sd_v15_modules.autoencoderkl import AutoencoderKL
@@ -40,7 +43,6 @@ class DDPM(BaseNetwork):
         else:
             raise ValueError("The model is not supported now.")
         
-        self.denoise_fn = UNet(**unet)
         self.beta_schedule = beta_schedule
 
         self.sample_type = sample_type
@@ -94,56 +96,48 @@ class DDPM(BaseNetwork):
         ## use_ldm
         if self.first_stage_fn is not None:
             self.first_stage_fn.eval()
-            ## use batch=1 infer to save GPU-MEM
             with torch.no_grad():
-                # y_0 = self.first_stage_fn.encode(y_0).mode()
-                y_0_hat = list()
-                for i in range(y_0.shape[0]):
-                    y_0_i = y_0[i, :, :, :].unsqueeze(0)
-                    y_0_i = self.first_stage_fn.encode(y_0_i).sample()
-                    y_0_hat.append(y_0_i)
-                y_0 = torch.cat(y_0_hat, 0)
-                y_0 = ldm_scale_factor * y_0
-                y_0 = y_0.detach()
+                y_0 = self.first_stage_fn.encode(y_0).sample()
+                y_0 = y_0.detach() * ldm_scale_factor
+
+                if y_cond is not None:
+                    y_hint = self.first_stage_fn.encode(y_cond).sample()
+                    y_hint = y_hint.detach() * ldm_scale_factor
 
             if mask is not None:
                 scale_factor = 1.0 * y_0.shape[2] / mask.shape[2]
                 mask = F.interpolate(mask, scale_factor=scale_factor, mode="bilinear")
                 mask = mask.detach()
 
-            if y_cond is not None:
-                scale_factor = 1.0 * y_0.shape[2] / y_cond.shape[2]
-                y_cond = F.interpolate(y_cond, scale_factor=scale_factor, mode="bilinear")
-                y_cond = y_cond.detach()
+        # context
+        context = None
+        if self.cond_fn is not None:
+            assert text is not None, 'We must have text while in condition guided mode.'
+            context = self.cond_fn.encode(text)
 
         # sampling from p(gammas)
         b, *_ = y_0.shape
         t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long()
         sample_gammas = extract(self.gammas, t, x_shape=y_0.shape)
-
         noise = default(noise, lambda: torch.randn_like(y_0))
         y_noisy = self.q_sample(y_0=y_0, 
                                 sample_gammas=sample_gammas.view(-1, 1, 1, 1),
                                 noise=noise)
-    
-        context = None
-        if self.cond_fn is not None:
-            assert text is not None, 'We must have text while in condition guided mode.'
-            context = self.cond_fn(text)
-
+        
         if mask is not None:
             y_noisy = y_0 * (1.0 - mask) + y_noisy * mask
-
-        if y_cond is not None:
-            y_noisy = torch.cat([y_noisy, y_cond], dim=1)
+            y_cond = y_0 * (1.0 - mask) + y_hint * mask
+            y_hint = None
         
+        # unet
         if self.module_name == 'sd_v15':
-            noise_hat = self.denoise_fn(y_noisy, t, y=label, context=context)
+            noise_hat = self.denoise_fn(torch.cat([y_noisy, y_cond], dim=1), t, y=label, context=context)
 
         if mask is not None:
-            loss = 1.0 * self.loss_fn(mask * noise, mask * noise_hat)
+            loss = 1.0 * self.loss_fn(mask * noise, mask * noise_hat) #+ 0.0 * self.loss_fn(noise, noise_hat)
         else:
             loss = self.loss_fn(noise, noise_hat)
+        # loss = self.loss_fn(noise, noise_hat)
         return loss
     
     @torch.no_grad()
@@ -158,7 +152,6 @@ class DDPM(BaseNetwork):
                             ratio=1.0, 
                             gd_w=0.0,
                             ldm_scale_factor=0.31723):
-        
         ## use_ldm
         if self.first_stage_fn is not None:
             y_gt = deepcopy(y_0)
@@ -166,19 +159,22 @@ class DDPM(BaseNetwork):
             self.first_stage_fn.eval()
             with torch.no_grad():
                 y_0 = self.first_stage_fn.encode(y_0).mode()
-                y_0 = ldm_scale_factor * y_0
-                y_0 = y_0.detach()
+                y_0 = y_0.detach() * ldm_scale_factor
 
-            scale_factor = 1.0 * y_0.shape[2] / mask.shape[2]
-            mask = F.interpolate(mask, scale_factor=scale_factor, mode="bilinear")
-            mask = mask.detach()
+                if y_cond is not None:
+                    y_hint = self.first_stage_fn.encode(y_cond).sample()
+                    y_hint = y_hint.detach() * ldm_scale_factor
 
-            y_cond = F.interpolate(y_cond, scale_factor=scale_factor, mode="bilinear")
-            y_cond = y_cond.detach()
+            if mask is not None:
+                scale_factor = 1.0 * y_0.shape[2] / mask.shape[2]
+                mask = F.interpolate(mask, scale_factor=scale_factor, mode="bilinear")
+                mask = mask.detach()
 
         context = None
-        if self.cond_fn is not None:            
-            context = self.cond_fn(text)
+        if self.cond_fn is not None:   
+            with torch.no_grad():         
+                context = self.cond_fn(text)
+                context = context.detach()
 
         noise = torch.randn_like(y_0)
         if ratio < 1.0:
@@ -189,9 +185,14 @@ class DDPM(BaseNetwork):
         else:
             y_t = noise   
 
+        if mask is not None:
+            y_cond = y_0 * (1.0 - mask) + y_hint * mask
+            y_hint = None
+
         if self.sample_type == 'ddim': 
             y_t, ret_arr = self.sampler.sample(y_t=y_t,
                                                y_cond=y_cond, 
+                                               y_hint=y_hint,
                                                y_0=y_0, 
                                                mask=mask, 
                                                label=label, 

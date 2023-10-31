@@ -3,7 +3,8 @@
     "seed" : -1, // random seed, seed <0 represents randomization not used 
 
     "path": { //set every part file path
-        "resume_state": "experiments/train_ldm_sz256_label1000_ch192/checkpoint/656" 
+        "resume_state": "experiments/train_ldm_sz256_label1000_ch192/checkpoint/848"         
+        // "resume_state": "experiments/train_ft_dehongcheng_ldm_sz256_label1000_230920_114918/checkpoint/100" 
     },
 
     "class_name": ["cashang", "pengshang", "zangwu", "huashang", "duoliao", "qikong", "zazhi", "jiagongbuliang",
@@ -13,11 +14,11 @@
             {
                 "name": ["models.ddpm", "DDPM"],
                 "lora_config": {
-                    "flag": "infer",  // ft | infer | not_use
-                    "loras": "/home/shr/shr_workspace/iddg/experiments/train_dehongcheng_lora_ldm_sz256_label1000_230914_142337/checkpoint/24_LoRA.pth",
+                    "flag": "not_use",  // ft | infer | not_use
+                    "loras": "/home/shr/shr_workspace/iddg/experiments/train_dehongcheng_lora_ldm_sz256_label1000_231010_190710/checkpoint/414_LoRA.pth",
                     "target_replace_module": ["CrossAttention", "Attention", "GEGLU"],
                     "inject_emb": true,
-                    "lora_rank": 64,
+                    "lora_rank": 32,
                     "lora_dropout_p": 0.1,
                     "lora_scale": 2.0,
                     "lora_steps": 200,

@@ -57,6 +57,111 @@ class DDIM_Solver:
     @torch.no_grad()
     def sample(self, 
                y_t,
+               y_hint=None,
+               y_cond=None, 
+               y_0=None, 
+               mask=None, 
+               label=None, 
+               context=None,
+               sample_num=8, 
+               ddim_num_steps=300, 
+               eta=0.0, 
+               ratio=1.0, 
+               gd_w=0.0):
+        '''
+        eta controls the scale of the variance (0 is DDIM, and 1 is one type of DDPM)
+        ddim_timesteps controls how many timesteps used in the process. Its value must less than self.num_timesteps
+        '''
+        self.make_schedule(ddim_num_steps=ddim_num_steps, ddim_discretize=self.schedule, ratio=ratio)
+        if sample_num > 0:
+            sample_inter = (len(self.time_seq) // sample_num)
+        else: 
+            sample_inter = len(self.time_seq) + 1
+
+        n = y_0.size(0)
+
+        if y_hint is None:
+            if mask is not None and y_0 is not None:
+                y_t = y_t * mask + y_0 * (1 - mask)
+        ret_arr = y_t
+        
+        if gd_w > 0.0:
+            if label is not None:
+                label_l = list()
+                for i in range(label.shape[0]):
+                    label_l.append(0)
+                for i in range(label.shape[0]):
+                    label_l.append(label[i])
+                label = torch.tensor(label_l).to(label.device)
+
+            ## TODO, text
+            if context is not None:
+                non_context = torch.zeros_like(context)
+                context = torch.cat([context, non_context], 0)
+
+        if gd_w > 0.0:
+            y_t = torch.cat([y_t, y_t], 0)
+            if y_cond is not None:
+                y_cond = torch.cat([y_cond, y_cond], 0)
+            if y_hint is not None:
+                y_hint = torch.cat([y_hint, y_hint], 0)
+            n = 2 * n
+
+        icount = 0
+        for i, j in zip(reversed(self.time_seq), reversed(self.time_seq_prev)):
+            t = (torch.ones(n) * i).to(y_t.device).long()
+            t_prev = (torch.ones(n) * j).to(y_t.device).long()
+            at = extract(self.alphas_cumprod, t, x_shape=(1, 1))
+            at_prev = extract(self.alphas_cumprod, t_prev, x_shape=(1, 1))
+
+            if y_hint is None:
+                if y_cond is not None:
+                    y_t_con = torch.cat([y_t, y_cond], dim=1)
+                
+                if self.module_name == 'sd_v15':
+                    et = self.denoise_fn(y_t_con, t, y=label, context=context)
+            else:
+                if self.module_name == 'sd_v15':
+                    et = self.denoise_fn(y_t, y_hint, t, y=label, context=context)
+
+            if gd_w > 0.0:
+                et_uc = et[0:n//2, :, :, :]
+                et_c = et[n//2:, :, :, :]
+                et = et_c + gd_w * (et_c - et_uc)
+                y_t = y_t[n//2:, :, :, :]
+                at = at[n//2:]
+                at_prev = at_prev[n//2:]
+            
+            at = at.unsqueeze(-1).unsqueeze(-1)
+            at_prev = at_prev.unsqueeze(-1).unsqueeze(-1)
+            y0_hat = (y_t - et * (1 - at).sqrt()) / at.sqrt()
+            if eta > 0:
+                c1 = (
+                    eta * ((1 - at / at_prev) * (1 - at_prev) / (1 - at)).sqrt()
+                )
+                c2 = ((1 - at_prev) - c1 ** 2).sqrt()
+                y_t = at_prev.sqrt() * y0_hat + c1 * torch.randn_like(y_t) + c2 * et
+            else:
+                c2 = (1 - at_prev).sqrt()
+                y_t = at_prev.sqrt() * y0_hat + c2 * et
+
+            if mask is not None and y_hint is None and i != self.time_seq[0]:
+                y_t = y_t * mask + y_0 * (1. - mask)   
+
+            icount += 1
+            if icount % sample_inter == 0 and (ret_arr.shape[0] // y_t.shape[0] - 1 <= sample_num):
+                ret_arr = torch.cat([ret_arr, y_t], dim=0)
+            if i == self.time_seq[0]:
+                ret_arr[-y_t.shape[0]:, :, :, :] =  y_t
+
+            if gd_w > 0.0 and i > self.time_seq[0]:
+                y_t = torch.cat([y_t, y_t], 0)
+
+        return y_t, ret_arr
+    
+    @torch.no_grad()
+    def sample_v2(self, 
+               y_t,
                y_cond=None, 
                y_0=None, 
                mask=None, 

@@ -10,7 +10,7 @@
             {
                 "name": ["models.ddpm", "DDPM"],
                 "lora_config": {
-                    "flag": "infer",  // ft | infer | not_use
+                    "flag": "not_use",  // ft | infer | not_use
                     "loras": null,
                     "target_replace_module": ["CrossAttention", "Attention", "GEGLU"],
                     "inject_emb": true,

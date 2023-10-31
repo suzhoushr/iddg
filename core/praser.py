@@ -181,10 +181,18 @@ def update_config(args):
         cfg['model']['which_networks'][0]['args']['sample_type'] = args.sample_type
     if args.sample_timesteps is not None and args.sample_timesteps != '':
         cfg['model']['which_networks'][0]['args']['sample_timesteps'] = args.sample_timesteps
-    cfg['gd_w'] = args.gd_w
-    cfg['encoding_ratio'] = args.encoding_ratio
-    cfg['gid_need_gen'] = args.gid_need_gen
-    cfg['defect_need_gen'] = args.defect_need_gen
+
+    if hasattr(args, 'gd_w'):
+        cfg['gd_w'] = args.gd_w
+
+    if hasattr(args, 'encoding_ratio'):
+        cfg['encoding_ratio'] = args.encoding_ratio
+
+    if hasattr(args, 'gid_need_gen'):
+        cfg['gid_need_gen'] = args.gid_need_gen
+
+    if hasattr(args, 'defect_need_gen'):
+        cfg['defect_need_gen'] = args.defect_need_gen
 
     return cfg
 

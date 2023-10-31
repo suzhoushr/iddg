@@ -147,7 +147,7 @@ class MaLiang(BaseModel):
         if "label" in data:
             self.label = self.set_device(data['label'])
         if "text" in data:
-            self.text = data['text']        
+            self.text = self.set_device(data['text'])        
     
     def get_current_visuals(self, phase='train'):
         dict = {

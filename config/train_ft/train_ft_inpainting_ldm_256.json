@@ -1,5 +1,5 @@
 {
-    "name": "dehongcheng_lora_ldm_sz256_label1000", // experiments name
+    "name": "ft_dehongcheng_ldm_sz256_label1000", // experiments name
     "gpu_ids": [0], // gpu ids list, default is single 0
     "seed" : -1, // random seed, seed <0 represents randomization not used 
     "finetune_norm": false, // find the parameters to optimize
@@ -10,8 +10,8 @@
         "tb_logger": "tb_logger", // path of tensorboard logger
         "results": "results",
         "checkpoint": "checkpoint",
-        "encoder_resume_state": "experiments/autoencoder/model_epoch_119.pth", 
-        "resume_state": "experiments/train_ldm_sz256_label1000_ch192/checkpoint/848" 
+        // "encoder_resume_state": "experiments/autoencoder/model_epoch_119.pth", 
+        "resume_state": "experiments/train_ldm_sz256_label1000_ch192/checkpoint/848"
         // "resume_state": null // ex: 100, loading .state  and .pth from given epoch and iteration        
     },
 
@@ -29,7 +29,7 @@
             "dataloader":{
                 "validation_split": 40, 
                 "args":{ 
-                    "batch_size": 64, 
+                    "batch_size": 8, 
                     "num_workers": 8,
                     "shuffle": true,
                     "pin_memory": true,
@@ -46,9 +46,9 @@
         },
         "test": { 
             "which_dataset": {
-                "name": "Inpaint4LoRADataset", 
+                "name": "InpaintDataset", 
                 "args":{
-                    "data_root": "datasets/micro_o/test_sz256.flist",
+                    "data_root": "datasets/hw/test_hwpc_all256.flist",
                     "image_size": [256, 256]
                 }
             },
@@ -67,12 +67,13 @@
             "args": {
                 "sample_num": 8, 
                 "task": "inpainting",
+                "stage": "finetune", // train | finetune
                 "lora_config": {
-                    "flag": "ft",  // ft | infer | not_use
+                    "flag": "not_use",  // ft | infer | not_use
                     "loras": null,
                     "target_replace_module": ["CrossAttention", "Attention", "GEGLU"],
                     "inject_emb": true,
-                    "lora_rank": 16,
+                    "lora_rank": 64,
                     "lora_dropout_p": 0.1,
                     "lora_scale": 2.0,
                     "lora_steps": 200,
@@ -135,7 +136,7 @@
                         "conv_resample": true,              // true
                         "dims": 2,                           // None
                         "num_classes": 1000,                // 100
-                        "use_checkpoint": true,            // false
+                        "use_checkpoint": false,            // false
                         "use_fp16": false,                  // false
                         "num_heads": 8,                     // 1
                         "num_head_channels": -1,            // 32
@@ -175,11 +176,11 @@
     },
 
     "train": { 
-        "n_epoch": 1e8, 
+        "n_epoch": 100, 
         "n_iter": 1e8, 
         "val_epoch": 1, 
-        "save_checkpoint_epoch": 2,
-        "log_iter": 10, 
+        "save_checkpoint_epoch": 10,
+        "log_iter": 100, 
         "tensorboard" : true 
     },
     

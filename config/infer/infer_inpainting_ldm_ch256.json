@@ -3,7 +3,7 @@
     "seed" : -1, // random seed, seed <0 represents randomization not used 
 
     "path": { //set every part file path
-        "resume_state": "experiments/train_ldm_sz256_label1000_ch256/checkpoint/312" 
+        "resume_state": "experiments/train_ldm_sz256_label1000_ch256/checkpoint/704" 
     },
     "model": { 
         "which_networks": [ 

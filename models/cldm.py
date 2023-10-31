@@ -8,7 +8,7 @@ from core.base_network import BaseNetwork
 from copy import deepcopy
 import pdb
 
-class DDPM(BaseNetwork):
+class CLDM(BaseNetwork):
     def __init__(self, unet, beta_schedule, 
                  module_name='sd_v15', 
                  sample_type='ddim', 
@@ -18,7 +18,7 @@ class DDPM(BaseNetwork):
                  ddconfig=None,                 
                  cond=None,
                  **kwargs):
-        super(DDPM, self).__init__(**kwargs)
+        super(CLDM, self).__init__(**kwargs)
         self.cond_fn = None
         self.first_stage_fn = None
         self.denoise_fn = None
@@ -27,7 +27,9 @@ class DDPM(BaseNetwork):
         if module_name == 'sd_v15':
             import sys
             sys.path.append('./models/sd_v15_modules')
-            from models.sd_v15_modules.unet import UNet
+            from models.sd_v15_modules.unet import UNetM
+
+            self.denoise_fn = UNetM(**unet)
 
             if use_cond:
                 from models.sd_v15_modules.ldm.modules.encoders.modules import ClassEmbedder
@@ -40,7 +42,6 @@ class DDPM(BaseNetwork):
         else:
             raise ValueError("The model is not supported now.")
         
-        self.denoise_fn = UNet(**unet)
         self.beta_schedule = beta_schedule
 
         self.sample_type = sample_type
@@ -91,59 +92,48 @@ class DDPM(BaseNetwork):
                 text=None,
                 noise=None,
                 ldm_scale_factor=0.31723):
+        # y_hint
+        y_hint = 0.5 * (y_0 + 1)
+        if mask is not None:
+            y_hint = y_hint * (1 - mask)
+            y_hint = torch.cat([y_hint, mask], 1)
+
         ## use_ldm
         if self.first_stage_fn is not None:
             self.first_stage_fn.eval()
-            ## use batch=1 infer to save GPU-MEM
             with torch.no_grad():
-                # y_0 = self.first_stage_fn.encode(y_0).mode()
-                y_0_hat = list()
-                for i in range(y_0.shape[0]):
-                    y_0_i = y_0[i, :, :, :].unsqueeze(0)
-                    y_0_i = self.first_stage_fn.encode(y_0_i).sample()
-                    y_0_hat.append(y_0_i)
-                y_0 = torch.cat(y_0_hat, 0)
-                y_0 = ldm_scale_factor * y_0
-                y_0 = y_0.detach()
+                y_0 = self.first_stage_fn.encode(y_0).sample()
+                y_0 = y_0.detach() * ldm_scale_factor
 
             if mask is not None:
                 scale_factor = 1.0 * y_0.shape[2] / mask.shape[2]
                 mask = F.interpolate(mask, scale_factor=scale_factor, mode="bilinear")
                 mask = mask.detach()
 
-            if y_cond is not None:
-                scale_factor = 1.0 * y_0.shape[2] / y_cond.shape[2]
-                y_cond = F.interpolate(y_cond, scale_factor=scale_factor, mode="bilinear")
-                y_cond = y_cond.detach()
-
-        # sampling from p(gammas)
-        b, *_ = y_0.shape
-        t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long()
-        sample_gammas = extract(self.gammas, t, x_shape=y_0.shape)
-
-        noise = default(noise, lambda: torch.randn_like(y_0))
-        y_noisy = self.q_sample(y_0=y_0, 
-                                sample_gammas=sample_gammas.view(-1, 1, 1, 1),
-                                noise=noise)
-    
+        # context
         context = None
         if self.cond_fn is not None:
             assert text is not None, 'We must have text while in condition guided mode.'
             context = self.cond_fn(text)
 
-        if mask is not None:
-            y_noisy = y_0 * (1.0 - mask) + y_noisy * mask
-
-        if y_cond is not None:
-            y_noisy = torch.cat([y_noisy, y_cond], dim=1)
+        # sampling from p(gammas)
+        b, *_ = y_0.shape
+        t = torch.randint(1, self.num_timesteps, (b,), device=y_0.device).long()
+        sample_gammas = extract(self.gammas, t, x_shape=y_0.shape)
+        noise = default(noise, lambda: torch.randn_like(y_0))
+        y_noisy = self.q_sample(y_0=y_0, 
+                                sample_gammas=sample_gammas.view(-1, 1, 1, 1),
+                                noise=noise)
         
+        # unet
         if self.module_name == 'sd_v15':
-            noise_hat = self.denoise_fn(y_noisy, t, y=label, context=context)
+            noise_hat = self.denoise_fn(y_noisy, y_hint, t, y=label, context=context)
 
         if mask is not None:
-            loss = 1.0 * self.loss_fn(mask * noise, mask * noise_hat)
+            loss = 5.0 * self.loss_fn(mask * noise, mask * noise_hat) + self.loss_fn(noise, noise_hat)
         else:
             loss = self.loss_fn(noise, noise_hat)
+        # loss = self.loss_fn(noise, noise_hat)
         return loss
     
     @torch.no_grad()
@@ -158,6 +148,11 @@ class DDPM(BaseNetwork):
                             ratio=1.0, 
                             gd_w=0.0,
                             ldm_scale_factor=0.31723):
+        # y_hint
+        y_hint = 0.5 * (y_0 + 1)
+        if mask is not None:
+            y_hint = y_hint * (1 - mask)
+            y_hint = torch.cat([y_hint, mask], 1)
         
         ## use_ldm
         if self.first_stage_fn is not None:
@@ -166,15 +161,7 @@ class DDPM(BaseNetwork):
             self.first_stage_fn.eval()
             with torch.no_grad():
                 y_0 = self.first_stage_fn.encode(y_0).mode()
-                y_0 = ldm_scale_factor * y_0
-                y_0 = y_0.detach()
-
-            scale_factor = 1.0 * y_0.shape[2] / mask.shape[2]
-            mask = F.interpolate(mask, scale_factor=scale_factor, mode="bilinear")
-            mask = mask.detach()
-
-            y_cond = F.interpolate(y_cond, scale_factor=scale_factor, mode="bilinear")
-            y_cond = y_cond.detach()
+                y_0 = y_0.detach() * ldm_scale_factor
 
         context = None
         if self.cond_fn is not None:            
@@ -192,6 +179,7 @@ class DDPM(BaseNetwork):
         if self.sample_type == 'ddim': 
             y_t, ret_arr = self.sampler.sample(y_t=y_t,
                                                y_cond=y_cond, 
+                                               y_hint=y_hint,
                                                y_0=y_0, 
                                                mask=mask, 
                                                label=label, 

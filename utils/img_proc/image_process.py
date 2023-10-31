@@ -432,13 +432,19 @@ def crop_image(img, points, im_crop_sz):
 
     return 1, crop_img, new_pionts, real_bbox
 
-def points2mask(points, shape_type, label='huashang', mask_type='rect', MIN_PIX=32, im_crop_sz=256):
+def points2mask(points, 
+                shape_type, 
+                label='huashang', 
+                mask_type='rect',
+                line_width=16,
+                point_size=16,
+                MIN_PIX=32, 
+                im_crop_sz=256):
     '''
     return output mask has the shape: 1 x H x W 
     '''
     image_shape = [im_crop_sz, im_crop_sz, 3]    
-    MIN_PIX = 32
-    label_mask = shape_to_mask(image_shape, points, shape_type=shape_type, line_width=16, point_size=16)
+    label_mask = shape_to_mask(image_shape, points, shape_type=shape_type, line_width=line_width, point_size=point_size)
     label_mask = np.where(label_mask == True, 255, 0).astype('uint8')
 
     pos = np.argwhere(label_mask > 0)

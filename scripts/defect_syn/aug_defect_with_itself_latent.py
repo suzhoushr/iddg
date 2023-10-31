@@ -8,8 +8,27 @@ import sys
 from tqdm import tqdm
 import argparse
 from core.praser import update_config
+from utils.img_proc.image_process import shape_to_mask
 import numpy as np
 import pdb
+
+def crop_imgs_by_info(imp, 
+                      jsp,
+                      crop_size=256):
+    img = cv2.imread(imp)
+    with open(jsp,'r',encoding ='utf-8') as jf:
+        info = json.load(jf)
+
+    shape_masks = list()
+    image_shape = [img.shape[0], img.shape[1], 3]
+    for shape in info['shapes']:
+        points = shape['points']
+        shape_type = shape["shape_type"]
+
+        label_mask = shape_to_mask(image_shape, points, shape_type=shape_type, line_width=8, point_size=4)
+        label_mask = np.where(label_mask == True, 1, 0).astype('uint8')
+        shape_masks.append(label_mask)
+    
 
 def main(args, is_show=False):
     engine = Engine(args, img_sz=256)
@@ -41,15 +60,15 @@ def main(args, is_show=False):
         random_ratio = args['encoding_ratio']  
         if args['jit_ratio'] and args['encoding_ratio'] > 0.15:
             random_ratio = 0.001 * np.random.randint(150, int(args['encoding_ratio']*1000)+1)
-        ret, img, new_info = engine.synthesis(imp, jsp, 
-                                              defect_need_gen=args['defect_need_gen'], 
-                                              gid_need_gen=args['gid_need_gen'], 
-                                              ratio=random_ratio, 
-                                              gd_w=args['gd_w'],
-                                              prob_syn=args['prob_syn'],
-                                              mask_type='rect', # rect | poly
-                                              SHOW=is_show,
-                                              task="aug")  # aug | inpaint
+        ret, img, new_info = engine.defect_selfaug(imp, jsp, 
+                                                   defect_need_gen=args['defect_need_gen'], 
+                                                   aug_ops=['flip', 'xy-shift'],
+                                                   ratio=random_ratio, 
+                                                   gd_w=args['gd_w'],
+                                                   prob_syn=args['prob_syn'],
+                                                   prob_defect2lp=0.2,
+                                                   mask_type='rect', # rect | poly
+                                                   SHOW=is_show)
         
         if not ret:
             continue
@@ -73,7 +92,6 @@ if __name__ == "__main__":
     parser.add_argument("--sample_timesteps", type=int, default=100, help="")
     parser.add_argument("--gd_w", type=float, default=0.0, help="")
     parser.add_argument("--encoding_ratio", type=float, default=0.5, help="")
-    parser.add_argument("--gid_need_gen", type=int, nargs='*', default=[], help="")
     parser.add_argument("--defect_need_gen", type=str, nargs='*',
                                                        default=['aotuhen', 'daowen', 'guashang', 
                                                                 'heidian', 'pengshang', 'shahenyin', 'tabian', 

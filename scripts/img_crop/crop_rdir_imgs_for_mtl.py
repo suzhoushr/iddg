@@ -196,12 +196,14 @@ def corp_box_by_json(imp, jsp,
     return defect_img_list, defect_json_list, lp_img_list, lp_json_list
 
 if __name__ == "__main__":
-    im_crop_sz = 768
-    im_overlap = 512
+    im_crop_sz = 1024
+    im_overlap = 1000
 
-    data_root = '/home/data0/project-datasets/dehongcheng/exp_SYB_inpaint_005_crop/train_val_data/train/'
-    fi_in_name = 'train_origin_data'
+    data_root = '/home/data0/project-datasets/micro_o_628/datasets/train_val_data/train/'
+    fi_in_name = 'train_O'
     fo_in_name = fi_in_name + '_crop' + str(im_crop_sz) + '_overlap' + str(im_overlap) 
+
+    SAVE_LP = False
 
     in_dir = os.path.join(data_root, fi_in_name)
     out_dir = os.path.join(data_root, fo_in_name)
@@ -229,7 +231,7 @@ if __name__ == "__main__":
         prefix_im_name = imp.split('/')[-1][:-4]
         if not os.path.exists(defect_save_dir):
             os.makedirs(defect_save_dir)
-        if not os.path.exists(lp_save_dir):
+        if SAVE_LP and not os.path.exists(lp_save_dir):
             os.makedirs(lp_save_dir)
 
         defect_imgs, defect_jsons, lp_imgs, lp_jsons = corp_box_by_json(imp, jsp, im_crop_sz=im_crop_sz, im_overlap=im_overlap)
@@ -248,18 +250,19 @@ if __name__ == "__main__":
             with open(njsonp, 'w', encoding='utf-8') as new_jf:   
                 json.dump(json_crop, new_jf, ensure_ascii=False, indent=4)
 
-        for i in range(len(lp_imgs)):
-            img_crop = lp_imgs[i]
-            json_crop = lp_jsons[i]
+        if SAVE_LP:
+            for i in range(len(lp_imgs)):
+                img_crop = lp_imgs[i]
+                json_crop = lp_jsons[i]
 
-            nimp = os.path.join(lp_save_dir, json_crop["imagePath"])
-            njsonp = nimp.replace('.jpg', '.json')
-            if os.path.exists(nimp) and os.path.exists(njsonp):
-                continue
+                nimp = os.path.join(lp_save_dir, json_crop["imagePath"])
+                njsonp = nimp.replace('.jpg', '.json')
+                if os.path.exists(nimp) and os.path.exists(njsonp):
+                    continue
 
-            cv2.imwrite(nimp, img_crop)
-            with open(njsonp, 'w', encoding='utf-8') as new_jf:   
-                json.dump(json_crop, new_jf, ensure_ascii=False, indent=4)
+                cv2.imwrite(nimp, img_crop)
+                with open(njsonp, 'w', encoding='utf-8') as new_jf:   
+                    json.dump(json_crop, new_jf, ensure_ascii=False, indent=4)
 
 
 
