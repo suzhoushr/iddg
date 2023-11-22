@@ -586,10 +586,12 @@ class MultiTaskDataset(data.Dataset):
             self.database = imgs[validation_split:]
         elif phase == "val":
             self.database = imgs[:validation_split]
-            self.prob_gen_task = 1.0
+            if self.prob_gen_task > 0:
+                self.prob_gen_task = 1.0
         elif phase == "test":
             self.database = imgs
-            self.prob_gen_task = 1.0
+            if self.prob_gen_task > 0:
+                self.prob_gen_task = 1.0
 
         self.phase = phase
         self.loader = loader
@@ -606,28 +608,43 @@ class MultiTaskDataset(data.Dataset):
         num_try = 0
         while True:
             im_crop, info_crop = random_crop(imp=imp, crop_shape=(self.image_size[0], self.image_size[1]))
+            if im_crop.shape[0] != self.image_size[1] or im_crop.shape[1] != self.image_size[0]:
+                index = torch.randint(0, len(self.database), (1,)).item()
+                imp = self.database[index]
+
+            if self.phase != "train":
+                break
             num_try += 1
-            if num_try >= 500:
+            if num_try >= 100:
                 break
 
-            if im_crop.shape[0] == self.image_size[1] and im_crop.shape[1] == self.image_size[0]:
-                ## im_crop is defect image
+            ## we just need ng image
+            if self.ratio_pos_neg <= 0:
+                if 'shapes' in info_crop and len(info_crop["shapes"]) > 0:
+                    break
+            ## we just need lp image
+            elif self.ratio_pos_neg > 0 and self.ratio_pos_neg < 1.0:
+                if 'shapes' not in info_crop and len(info_crop["shapes"]) <= 0:
+                    break
+            ## lp and ng prob. sample
+            else:
                 if 'shapes' in info_crop and len(info_crop["shapes"]) > 0:
                     self.cnt_pos += 1
                     break
-
-                if 1.0 * self.cnt_pos > self.ratio_pos_neg * self.cnt_neg:
-                    self.cnt_neg += 1
-                    break
+                else:
+                    if 1.0 * self.cnt_pos > self.ratio_pos_neg * self.cnt_neg:
+                        self.cnt_neg += 1
+                        break  
+        # end of while         
                         
         img = torch.from_numpy(cv2.cvtColor(im_crop, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
         img = (img / 127.5) - 1 
 
         mask, label, inst = self.get_mask_and_label(info=info_crop, return_inst=True)
-        im_cond, mask, prompt = self.get_prompt(img=im_crop, 
-                                                mask=mask.squeeze(0).numpy(),
-                                                label=label,
-                                                inst=inst.squeeze(0).numpy())
+        im_cond, prompt = self.get_prompt(img=im_crop, 
+                                          mask=mask.squeeze(0).numpy(),
+                                          label=label,
+                                          inst=inst.squeeze(0).numpy())
 
         ret['gt_image'] = img
         ret['cond_image'] = im_cond 
@@ -665,9 +682,11 @@ class MultiTaskDataset(data.Dataset):
 
             if return_inst:
                 label_inst = shape_to_mask(image_shape, points, shape_type=shape_type, line_width=4, point_size=4)
-                label_inst = np.where(label_inst == True, 1.0, 0).astype('uint8')
+                label_inst = np.where(label_inst == True, 255, 0).astype('uint8')
+                label_inst = cv2.dilate(label_inst, np.ones((3, 3), dtype=np.uint8), iterations=1)
+                label_inst = cv2.erode(label_inst, np.ones((3, 3), dtype=np.uint8), iterations=1)
                 label_inst = np.expand_dims(label_inst, 0)
-                inst = torch.from_numpy(label_inst).float()
+                inst = torch.from_numpy(label_inst).float() / 255.0
 
             pos = np.argwhere(label_mask > 0)
             (y1, x1), (y2, x2) = pos.min(0), pos.max(0) + 1
@@ -713,55 +732,57 @@ class MultiTaskDataset(data.Dataset):
         try:     
             pos = np.argwhere(mask > 0)
             (y1, x1), (y2, x2) = pos.min(0), pos.max(0) + 1
-            area_prompt = str(x1) + ', ' + str(y1) + ', ' + str(x2) + ', ' + str(y2) + '.'
         except:
             x1, y1, x2, y2 = 0, 0, img.shape[1], img.shape[0]
-            area_prompt = str(x1) + ', ' + str(y1) + ', ' + str(x2) + ', ' + str(y2) + '.'
+        # area_prompt = str(x1) + ', ' + str(y1) + ', ' + str(x2) + ', ' + str(y2) + '.'
+        area_prompt = '<{:d}><{:d}><{:d}><{:d}>'.format(x1, y1, x2, y2)
         
         if label == 'lp':
-            prompt = 'This is a inpaint task. The area needs to inpaint is: ' + area_prompt
+            # prompt = 'This is a inpaint task. The area needs to inpaint is: ' + area_prompt
+            prompt = '[inpaint] please inpaint the area: ' + area_prompt
             mask = np.expand_dims(mask, -1)
             im_cond = img * (1 - mask)
             im_cond = torch.from_numpy(cv2.cvtColor(im_cond, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
             im_cond = (im_cond / 127.5) - 1 
-            mask = torch.from_numpy(mask).float().permute(2, 0, 1)
 
-            return im_cond, mask, prompt
+            return im_cond, prompt
         
         if label == 'ng':
-            prompt = 'This is a defect generation task. The area needs to generate is: ' + area_prompt
+            # prompt = 'This is a defect generation task. The area needs to generate is: ' + area_prompt
+            prompt = '[generation] there is a defect in the area: ' + area_prompt
             mask = np.expand_dims(mask, -1)
-            im_cond = torch.from_numpy(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
+            im_cond = img * (1 - mask)
+            im_cond = torch.from_numpy(cv2.cvtColor(im_cond , cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
             im_cond = (im_cond / 127.5) - 1 
-            mask = torch.from_numpy(mask).float().permute(2, 0, 1)
 
-            return im_cond, mask, prompt
+            return im_cond, prompt
         
         if torch.rand((1,)).item() <= self.prob_gen_task:
             if label not in self.defect2eng:
-                prompt = 'This is a defect generation task. The area needs to generate is: ' + area_prompt
+                # prompt = 'This is a defect generation task. The area needs to generate is: ' + area_prompt
+                prompt = '[generation] there is a defect in the area: ' + area_prompt
             else:
-                prompt = 'This is a {:s} defect generation task. The area needs to generate is: '.format(self.defect2eng[label]) + area_prompt
-            
+                # prompt = 'This is a {:s} defect generation task. The area needs to generate is: '.format(self.defect2eng[label]) + area_prompt
+                prompt = '[generation] there is a {:s} defect in the area: '.format(self.defect2eng[label]) + area_prompt
             mask = np.expand_dims(mask, -1)
             im_cond = img * (1 - mask)
             im_cond = torch.from_numpy(cv2.cvtColor(im_cond, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
             im_cond = (im_cond / 127.5) - 1 
-            mask = torch.from_numpy(mask).float().permute(2, 0, 1)
 
-            return im_cond, mask, prompt
+            return im_cond, prompt
         
         ## aug
         if label not in self.defect2eng:
-            prompt = 'This is a defect sythesis task. The area needs to synthesize is: ' + area_prompt
+            # prompt = 'This is a defect sythesis task. The area needs to synthesize is: ' + area_prompt
+            prompt = '[sythesis] please synthesize a defect in the area: ' + area_prompt
         else:
-            prompt = 'This is a {:s} defect sythesis task. The area needs to synthesize is: '.format(self.defect2eng[label]) + area_prompt
+            # prompt = 'This is a {:s} defect sythesis task. The area needs to synthesize is: '.format(self.defect2eng[label]) + area_prompt
+            prompt = '[sythesis] please synthesize a {:s} defect in the area: '.format(self.defect2eng[label]) + area_prompt
         mask = np.expand_dims(mask, -1)
-        mask = torch.from_numpy(mask).float().permute(2, 0, 1)
 
         img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))  
         min_th, max_th = 5, 18
-        prob_aug = 0.8
+        prob_aug = 1.0
         if torch.rand((1,)).item() < prob_aug:
             brightEnhancer = ImageEnhance.Brightness(img_pil)
             bright = torch.randint(min_th, max_th, (1,)).item() / 10.0
@@ -788,4 +809,119 @@ class MultiTaskDataset(data.Dataset):
         im_cond = torch.from_numpy(cv2.cvtColor(im_cond, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
         im_cond = (im_cond / 127.5) - 1 
 
-        return im_cond, mask, prompt
+        return im_cond, prompt
+    
+class BaseDataset(data.Dataset):
+    def __init__(self, data_root, 
+                 image_size=[256, 256], 
+                 loader=pil_loader, 
+                 validation_split=40,
+                 phase="train",
+                 ratio_pos_neg=2.0,
+                 extra_class_name=None):
+        self.ratio_pos_neg = ratio_pos_neg
+        self.cnt_pos = 0
+        self.cnt_neg = 0
+        ## defect name and its index, 0 is left to UNK/noneless label
+        self.defect2eng = {'noneless':'noneless', 'lp':1, 'ng':2, 
+                            'huashang':'scratch', 'pengshang':'bruise', 'yise':'color variation',
+                            'aokeng':'dent', 'heidian':'black spot', 'shahenyin':'sanding marks', 
+                            'bianxing':'deformation', 'tabian':'collapse edge', 'molie':'film cracking', 
+                            'gubao':'bulge', 'yiwu':'foreign object', 'guashang':'scrape', 
+                            'caizhixian':'material line', 'liewen':'crack', 'daowen':'Knife mark', 
+                            'zhanya':'adsorption crushing', 'aotuhen':'recessed and raised Marks', 'cashang':'abrasion', 
+                            'yashang':'crushing', 'madian':'pitting spots', 'youmo':'ink stain', 'zangwu':'stain', 
+                            'baidian':'white spot', 'maoxu':'lint', 'keli':'particles', 'quepeng':'edge bruise', 
+                            'maoci':'burrs', 'queliao':'missing material', 'quepenghua':'bruise-scratch',                          
+                            'wuluowen':'threadless', 'zhanliao':'residue', 'liuwen':'flow marks', 
+                            'aotu':'concave-convex', 'juchi':'serrated edge', 'qipao':'air bubble', 
+                            'zanghua':'blemis', 'kailie':'crack', 'xianweimao':'fiber hair', 'nzgs':'unknow', 
+                            'jiaobuliang':'poor adhesion', 'aotudian':'concave and convex spot'}
+        if extra_class_name is not None:
+            for name in extra_class_name:
+                if name in self.defect2eng:
+                    continue
+                self.defect2eng[name] = extra_class_name[name]
+        # make dataset
+        imgs = make_dataset(data_root)
+
+        if not isinstance(validation_split, int):
+            validation_split = int(validation_split * len(imgs))
+
+        if phase == "train":
+            self.database = imgs[validation_split:]
+        elif phase == "val":
+            self.database = imgs[:validation_split]
+            if self.prob_gen_task > 0:
+                self.prob_gen_task = 1.0
+        elif phase == "test":
+            self.database = imgs
+            if self.prob_gen_task > 0:
+                self.prob_gen_task = 1.0
+
+        self.phase = phase
+        self.loader = loader
+        self.image_size = image_size  # (w, h)
+        self.len_ = len(self.database)
+
+    def __getitem__(self, index):
+        ret = {}
+        imp = self.database[index]
+
+        if self.cnt_neg > 1e8 or self.cnt_pos > 1e8:
+            self.cnt_neg = 0
+            self.cnt_pos = 0
+        num_try = 0
+        while True:
+            im_crop, info_crop = random_crop(imp=imp, crop_shape=(self.image_size[0], self.image_size[1]))
+            num_try += 1
+            if num_try >= 500:
+                break
+
+            if im_crop.shape[0] == self.image_size[1] and im_crop.shape[1] == self.image_size[0]:
+                ## im_crop is defect image
+                if 'shapes' in info_crop and len(info_crop["shapes"]) > 0:
+                    self.cnt_pos += 1
+                    break
+
+                if self.ratio_pos_neg <= 0:
+                    continue 
+
+                if 1.0 * self.cnt_pos > self.ratio_pos_neg * self.cnt_neg:
+                    self.cnt_neg += 1
+                    break
+                        
+        img = torch.from_numpy(cv2.cvtColor(im_crop, cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
+        img = (img / 127.5) - 1 
+
+        prompt = self.get_prompt(info=info_crop)
+
+        ret['gt_image'] = img
+        ret['text'] = prompt
+        ret['path'] = imp.rsplit("/")[-1].rsplit("\\")[-1]
+        return ret
+
+    def __len__(self):
+        return self.len_
+        
+    def get_prompt(self, info): 
+        # prompt = 'A partial iamge of a workpiece surface.'  
+        prompt = ''
+        if 'shapes' not in info or len(info["shapes"]) <= 0:
+            prompt = 'no defects |' 
+        else:
+            for shape in info["shapes"]:
+                label = shape["label"]
+                points = shape["points"]
+                x_list = [k[0] for k in points]
+                y_list = [k[1] for k in points]
+
+                x1, y1, x2, y2 = int(min(x_list)), int(min(y_list)), int(max(x_list)), int(max(y_list))
+                area_prompt = '<{:d}><{:d}><{:d}><{:d}>'.format(x1, y1, x2, y2)
+                
+                if label in self.defect2eng:
+                    prompt += 'a {:s} defect in the area '.format(self.defect2eng[label]) + area_prompt + ' | '
+                else:
+                    prompt += 'a unknown defect in the area ' + area_prompt + ' | '
+
+        return prompt.strip()

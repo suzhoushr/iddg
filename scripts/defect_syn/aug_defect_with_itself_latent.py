@@ -66,7 +66,7 @@ def main(args, is_show=False):
                                                    ratio=random_ratio, 
                                                    gd_w=args['gd_w'],
                                                    prob_syn=args['prob_syn'],
-                                                   prob_defect2lp=0.2,
+                                                   prob_defect2lp=0.5,
                                                    mask_type='rect', # rect | poly
                                                    SHOW=is_show)
         

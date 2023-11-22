@@ -616,6 +616,7 @@ class Engine():
             points = _shape.get("points")
             ret, crop_img, new_points, real_bbox = crop_image(img, points, self.im_crop_sz)                        
             if ret == 0:
+                new_info["shapes"].append(_shape)
                 continue
 
             boxx_x1, boxx_y1, boxx_x2, boxx_y2 = real_bbox
@@ -866,14 +867,14 @@ if __name__ == "__main__":
     config = './config/infer/infer_inpainting_ldm_ch192.json'    
     engine = Engine(config) 
 
-    ## random sample
-    for seed in range(10):
-        output1 = engine.rnd_sample_(label='lp', seed=seed, gd_w=0.0)
-        output2 = engine.rnd_sample_(label='ng', seed=seed, gd_w=0.0)
-        output3 = engine.rnd_sample_(label='pengshang', seed=seed, gd_w=0.0)
-        output = np.concatenate([output1, output2, output3], 1)
-        cv2.imshow('rand sample', output)
-        cv2.waitKey(0)
+    # ## random sample
+    # for seed in range(10):
+    #     output1 = engine.rnd_sample_(label='lp', seed=seed, gd_w=0.0)
+    #     output2 = engine.rnd_sample_(label='ng', seed=seed, gd_w=0.0)
+    #     output3 = engine.rnd_sample_(label='pengshang', seed=seed, gd_w=0.0)
+    #     output = np.concatenate([output1, output2, output3], 1)
+    #     cv2.imshow('rand sample', output)
+    #     cv2.waitKey(0)
 
     ## inpaint
     imp = './test/aokeng_0_damian_0372-0008-01.jpg'
@@ -903,7 +904,8 @@ if __name__ == "__main__":
         cv_img_msk = cv_img_msk.astype('uint8')
         diff = np.abs(cv_img - output)
         # im_res = cv_img
-        im_res = np.concatenate([cv_img, cv_img_msk, output, output_lp, diff], 1)
+        # im_res = np.concatenate([cv_img, cv_img_msk, output, output_lp, diff], 1)
+        im_res = np.concatenate([cv_img, output, diff], 1)
         cv2.imshow('res_inpaint', im_res)
         cv2.waitKey(0)
 

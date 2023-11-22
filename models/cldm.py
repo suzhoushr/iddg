@@ -15,25 +15,39 @@ class CLDM(BaseNetwork):
                  sample_timesteps=300,
                  use_cond=False,
                  use_ldm=False, 
+                 use_control=False,
                  ddconfig=None,                 
                  cond=None,
+                 control=None,
                  **kwargs):
         super(CLDM, self).__init__(**kwargs)
         self.cond_fn = None
         self.first_stage_fn = None
         self.denoise_fn = None
+        self.control_fn = None
         self.module_name = module_name
 
         if module_name == 'sd_v15':
             import sys
             sys.path.append('./models/sd_v15_modules')
-            from models.sd_v15_modules.unet import UNetM
+            
+            if use_control:
+                from models.sd_v15_modules.cunet import CUNet, ControlNet
+                self.denoise_fn = CUNet(**unet)
+                # self.denoise_fn = self.denoise_fn.eval()
+                # for param in self.denoise_fn.parameters():
+                #     param.requires_grad = False
 
-            self.denoise_fn = UNetM(**unet)
+                self.control_fn = ControlNet(hint_channels=control['hin_channels'], **unet)
+                self.only_mid_control = control['only_mid_control']
+            else:
+                from models.sd_v15_modules.cunet import UNet
+                self.denoise_fn = UNet(**unet)                
 
             if use_cond:
-                from models.sd_v15_modules.ldm.modules.encoders.modules import ClassEmbedder
-                self.cond_fn = ClassEmbedder(embed_dim=cond['context_dim'] ,n_classes=cond['num_classes'])
+                from models.sd_v15_modules.ldm.modules.encoders.modules import FrozenCLIPEmbedder
+                self.cond_fn = FrozenCLIPEmbedder(version=cond['version'], max_length=cond['max_length'])
+                self.cond_fn.freeze()
 
             if use_ldm:
                 from models.sd_v15_modules.autoencoderkl import AutoencoderKL
@@ -92,12 +106,6 @@ class CLDM(BaseNetwork):
                 text=None,
                 noise=None,
                 ldm_scale_factor=0.31723):
-        # y_hint
-        y_hint = 0.5 * (y_0 + 1)
-        if mask is not None:
-            y_hint = y_hint * (1 - mask)
-            y_hint = torch.cat([y_hint, mask], 1)
-
         ## use_ldm
         if self.first_stage_fn is not None:
             self.first_stage_fn.eval()
@@ -105,16 +113,21 @@ class CLDM(BaseNetwork):
                 y_0 = self.first_stage_fn.encode(y_0).sample()
                 y_0 = y_0.detach() * ldm_scale_factor
 
+                if y_cond is not None:
+                    y_hint = self.first_stage_fn.encode(y_cond).sample()
+                    y_hint = y_hint.detach() * ldm_scale_factor
+
             if mask is not None:
                 scale_factor = 1.0 * y_0.shape[2] / mask.shape[2]
                 mask = F.interpolate(mask, scale_factor=scale_factor, mode="bilinear")
                 mask = mask.detach()
-
         # context
         context = None
         if self.cond_fn is not None:
             assert text is not None, 'We must have text while in condition guided mode.'
-            context = self.cond_fn(text)
+            with torch.no_grad():
+                context = self.cond_fn.encode(text)
+            context = context.detach()
 
         # sampling from p(gammas)
         b, *_ = y_0.shape
@@ -125,12 +138,19 @@ class CLDM(BaseNetwork):
                                 sample_gammas=sample_gammas.view(-1, 1, 1, 1),
                                 noise=noise)
         
+        if mask is not None:
+            y_noisy = y_0 * (1.0 - mask) + y_noisy * mask
+            # y_cond = y_0 * (1.0 - mask) + y_hint * mask
+            y_cond = deepcopy(y_hint)
+            y_cond = torch.cat([y_cond, mask], dim=1)
+            y_hint = None
+        
         # unet
         if self.module_name == 'sd_v15':
-            noise_hat = self.denoise_fn(y_noisy, y_hint, t, y=label, context=context)
+            noise_hat = self.denoise_fn(torch.cat([y_noisy, y_cond], dim=1), t, y=label, context=context)
 
         if mask is not None:
-            loss = 5.0 * self.loss_fn(mask * noise, mask * noise_hat) + self.loss_fn(noise, noise_hat)
+            loss = 1.0 * self.loss_fn(mask * noise, mask * noise_hat) #+ 1.0 * self.loss_fn(noise, noise_hat)
         else:
             loss = self.loss_fn(noise, noise_hat)
         # loss = self.loss_fn(noise, noise_hat)
@@ -148,12 +168,6 @@ class CLDM(BaseNetwork):
                             ratio=1.0, 
                             gd_w=0.0,
                             ldm_scale_factor=0.31723):
-        # y_hint
-        y_hint = 0.5 * (y_0 + 1)
-        if mask is not None:
-            y_hint = y_hint * (1 - mask)
-            y_hint = torch.cat([y_hint, mask], 1)
-        
         ## use_ldm
         if self.first_stage_fn is not None:
             y_gt = deepcopy(y_0)
@@ -163,9 +177,21 @@ class CLDM(BaseNetwork):
                 y_0 = self.first_stage_fn.encode(y_0).mode()
                 y_0 = y_0.detach() * ldm_scale_factor
 
+                if y_cond is not None:
+                    y_hint = self.first_stage_fn.encode(y_cond).sample()
+                    y_hint = y_hint.detach() * ldm_scale_factor
+
+            if mask is not None:
+                scale_factor = 1.0 * y_0.shape[2] / mask.shape[2]
+                mask = F.interpolate(mask, scale_factor=scale_factor, mode="bilinear")
+                mask = mask.detach()
+        # pdb.set_trace()
+
         context = None
-        if self.cond_fn is not None:            
-            context = self.cond_fn(text)
+        if self.cond_fn is not None:   
+            with torch.no_grad():
+                context = self.cond_fn.encode(text)
+            context = context.detach()
 
         noise = torch.randn_like(y_0)
         if ratio < 1.0:
@@ -175,6 +201,13 @@ class CLDM(BaseNetwork):
             y_t = self.q_sample(y_0=y_0, sample_gammas=at, noise=noise)            
         else:
             y_t = noise   
+
+        if mask is not None:
+            # y_cond = y_0 * (1.0 - mask) + y_hint * mask
+            y_cond = deepcopy(y_hint)
+            y_cond = torch.cat([y_cond, mask], dim=1)
+            # y_0 = None
+            y_hint = None
 
         if self.sample_type == 'ddim': 
             y_t, ret_arr = self.sampler.sample(y_t=y_t,
@@ -209,70 +242,6 @@ class CLDM(BaseNetwork):
                 ret_arr_l.append(img)
             ret_arr = torch.cat(ret_arr_l, 0)
     
-        return y_t, ret_arr
-    
-    @torch.no_grad()
-    def generate_restoration(self, 
-                            label=None,
-                            text=None,
-                            sample_num=8,
-                            eta=0.0,
-                            gd_w=0.0,
-                            im_sz=256,
-                            seed=None,
-                            ldm_scale_factor=0.31723,
-                            device='cuda:0'):
-        ratio = 1.0
-            
-        y_0 = torch.randn(1, 3, im_sz, im_sz).to(device)
-        mask = torch.ones(1, 1, im_sz, im_sz).to(device)
-        y_cond = torch.ones(1, 1, im_sz, im_sz).to(device)
-        
-        ## use_ldm
-        if self.first_stage_fn is not None:
-             y_0 = torch.randn(1, 4, im_sz//8, im_sz//8).to(device)
-             mask = torch.ones(1, 1, im_sz//8, im_sz//8).to(device)
-             y_cond = torch.ones(1, 1, im_sz//8, im_sz//8).to(device)
-
-        context = None
-        if self.cond_fn is not None:       
-            assert text is not None, 'oops, you forgot to set text'     
-            context = self.cond_fn(text)
-            
-        if seed is not None:
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
-        noise = torch.randn_like(y_0)
-        y_t = noise   
-
-        if self.sample_type == 'ddim': 
-            y_t, ret_arr = self.sampler.sample(y_t=y_t,
-                                               y_cond=y_cond, 
-                                               y_0=y_0, 
-                                               mask=mask, 
-                                               label=label, 
-                                               context=context,
-                                               sample_num=sample_num, 
-                                               ddim_num_steps=self.ddim_timesteps, 
-                                               eta=eta, 
-                                               ratio=ratio, 
-                                               gd_w=gd_w)
-
-        if self.first_stage_fn is not None:
-            with torch.no_grad():
-                y_t = 1.0 / ldm_scale_factor * y_t
-                y_t = self.first_stage_fn.decode(y_t)
-
-            ret_arr_l = list()
-            delta = ret_arr.shape[0] // y_t.shape[0]
-            for i in range(delta):  
-                z_t = ret_arr[i*y_t.shape[0]:i*y_t.shape[0]+y_t.shape[0], :, :, :]      
-                with torch.no_grad():
-                    z_t = 1.0 / ldm_scale_factor * z_t
-                    img = self.first_stage_fn.decode(z_t)
-                ret_arr_l.append(img)
-            ret_arr = torch.cat(ret_arr_l, 0)
-        
         return y_t, ret_arr
     
 # gaussian diffusion trainer class

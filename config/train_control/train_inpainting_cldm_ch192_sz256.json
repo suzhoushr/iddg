@@ -1,5 +1,5 @@
 {
-    "name": "bldm_ch192_sz256_label1000", // experiments name
+    "name": "cldm_ch192_sz256_label1000", // experiments name
     "gpu_ids": [0], // gpu ids list, default is single 0
     "seed" : -1, // random seed, seed <0 represents randomization not used 
     "finetune_norm": false, // find the parameters to optimize
@@ -18,11 +18,12 @@
     "datasets": { 
         "train": { 
             "which_dataset": {  
-                "name": ["data.dataset", "BaseDataset"], 
+                "name": ["data.dataset", "InpaintDataset"], 
                 "args":{ 
                     "data_root": "datasets/history_dataset/train_ldm_his_all.flist",
                     "image_size": [256, 256],
-                    "ratio_pos_neg": 1.0
+                    "ratio_pos_neg": 1.0,
+                    "prob_inpaint_task": 1.0     
                 } 
             },
             "dataloader":{
@@ -70,7 +71,7 @@
                     "flag": "not_use",  // ft | infer | not_use
                     "loras": null,
                     "target_replace_module": ["CrossAttention", "Attention", "GEGLU"],
-                    "inject_emb": false,
+                    "inject_emb": true,
                     "lora_rank": 64,
                     "lora_dropout_p": 0.1,
                     "lora_scale": 2.0,
@@ -95,9 +96,8 @@
                     "module_name": "sd_v15", 
                     "sample_type": "ddim",
                     "sample_timesteps": 300,
-                    "use_cond": true,
+                    "use_cond": false,
                     "use_ldm": true,
-                    "use_control": false,
                     "ddconfig": {
                         "double_z": true,
                         "z_channels": 4,
@@ -111,12 +111,8 @@
                         "dropout": 0.0
                     },                    
                     "cond": {
-                        "version": "openai/clip-vit-large-patch14",
-                        "max_length": 77
-                    },
-                    "control": {
-                        "hint_channels": 3,
-                        "only_mid_control": false
+                        "context_dim": 768,
+                        "num_classes": 1000
                     },
                     "unet": {
                         "image_size": 32, 

@@ -1,5 +1,5 @@
 {
-    "name": "mldm_ch192_sz256_label1000", // experiments name
+    "name": "gen_inp_ch192_sz256_label1000", // experiments name
     "gpu_ids": [0], // gpu ids list, default is single 0
     "seed" : -1, // random seed, seed <0 represents randomization not used 
     "finetune_norm": false, // find the parameters to optimize
@@ -23,7 +23,7 @@
                     "data_root": "datasets/history_dataset/train_ldm_his_all.flist",
                     "image_size": [256, 256],
                     "ratio_pos_neg": 2.0,
-                    "prob_gen_task": 0.5     
+                    "prob_gen_task": 1.0     
                 } 
             },
             "dataloader":{
@@ -71,7 +71,7 @@
                     "flag": "not_use",  // ft | infer | not_use
                     "loras": null,
                     "target_replace_module": ["CrossAttention", "Attention", "GEGLU"],
-                    "inject_emb": true,
+                    "inject_emb": false,
                     "lora_rank": 64,
                     "lora_dropout_p": 0.1,
                     "lora_scale": 2.0,
@@ -111,12 +111,12 @@
                         "dropout": 0.0
                     },                    
                     "cond": {
-                        "context_dim": 768,
-                        "num_classes": 1000
+                        "version": "openai/clip-vit-large-patch14",
+                        "max_length": 77
                     },
                     "unet": {
                         "image_size": 32, 
-                        "in_channels": 8, 
+                        "in_channels": 9, 
                         "model_channels": 192,
                         "out_channels": 4, 
                         "num_res_blocks": 2,  

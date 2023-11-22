@@ -78,11 +78,10 @@ class DDIM_Solver:
         else: 
             sample_inter = len(self.time_seq) + 1
 
-        n = y_0.size(0)
+        n = y_t.size(0)
 
-        if y_hint is None:
-            if mask is not None and y_0 is not None:
-                y_t = y_t * mask + y_0 * (1 - mask)
+        if mask is not None and y_0 is not None:
+            y_t = y_t * mask + y_0 * (1 - mask)
         ret_arr = y_t
         
         if gd_w > 0.0:
@@ -97,7 +96,7 @@ class DDIM_Solver:
             ## TODO, text
             if context is not None:
                 non_context = torch.zeros_like(context)
-                context = torch.cat([context, non_context], 0)
+                context = torch.cat([non_context, context], 0)
 
         if gd_w > 0.0:
             y_t = torch.cat([y_t, y_t], 0)
@@ -117,12 +116,14 @@ class DDIM_Solver:
             if y_hint is None:
                 if y_cond is not None:
                     y_t_con = torch.cat([y_t, y_cond], dim=1)
+                else:
+                    y_t_con = y_t
                 
                 if self.module_name == 'sd_v15':
                     et = self.denoise_fn(y_t_con, t, y=label, context=context)
             else:
                 if self.module_name == 'sd_v15':
-                    et = self.denoise_fn(y_t, y_hint, t, y=label, context=context)
+                    et = self.denoise_fn(y_t, t, y=label, context=context, y_hint=y_hint)
 
             if gd_w > 0.0:
                 et_uc = et[0:n//2, :, :, :]
@@ -145,7 +146,7 @@ class DDIM_Solver:
                 c2 = (1 - at_prev).sqrt()
                 y_t = at_prev.sqrt() * y0_hat + c2 * et
 
-            if mask is not None and y_hint is None and i != self.time_seq[0]:
+            if mask is not None  and y_0 is not None and i != self.time_seq[0]:
                 y_t = y_t * mask + y_0 * (1. - mask)   
 
             icount += 1

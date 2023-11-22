@@ -188,7 +188,7 @@ class MaLiang(BaseModel):
                     self.netG.cond_fn.train()
 
         self.train_metrics.reset()
-        accum_iter = 2
+        accum_iter = 1
         for batch_idx, train_data in enumerate(tqdm.tqdm(self.phase_loader)):
             self.set_input(train_data)
 
