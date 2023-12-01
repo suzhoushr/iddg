@@ -113,7 +113,7 @@ class MaLiang(BaseModel):
             self.netG.module.set_new_noise_schedule(phase=self.phase)
         else:
             self.netG.set_loss(self.loss_fn)
-            self.netG.set_new_noise_schedule(phase=self.phase, device=self.opt['device'])
+            self.netG.set_new_noise_schedule(phase=self.phase)
 
         ''' can rewrite in inherited class for more informations logging '''
         if kwargs['logger'] is not None:

@@ -1,5 +1,5 @@
 {
-    "name": "gen_inp_ch192_sz256_label1000", // experiments name
+    "name": "mdiff_ch192_sz256", // experiments name
     "gpu_ids": [0], // gpu ids list, default is single 0
     "seed" : -1, // random seed, seed <0 represents randomization not used 
     "finetune_norm": false, // find the parameters to optimize

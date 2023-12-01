@@ -60,7 +60,7 @@ def set_gpu(args, distributed=False, rank=0):
 	if distributed and isinstance(args, torch.nn.Module):
 		return DDP(args.cuda(), device_ids=[rank], output_device=rank, broadcast_buffers=True, find_unused_parameters=True)
 	else:
-		return args.cuda(rank)
+		return args.cuda()
 		
 def set_device(args, distributed=False, rank=0):
 	""" set parameter to gpu or cpu """

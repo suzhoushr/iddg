@@ -123,7 +123,7 @@ class MLDM(BaseNetwork):
         
         if mask is not None:
             y_noisy = y_0 * (1.0 - mask) + y_noisy * mask
-            y_cond = y_0 * (1.0 - mask) + torch.rand_like(y_0) * mask
+            y_cond = y_0 * (1.0 - mask) + torch.randn_like(y_0) * mask
             y_cond = torch.cat([y_cond, mask], dim=1)
         
         # unet
@@ -179,9 +179,8 @@ class MLDM(BaseNetwork):
             y_t = noise   
 
         if mask is not None:
-            y_cond = y_0 * (1.0 - mask) + torch.rand_like(y_0) * mask
+            y_cond = y_0 * (1.0 - mask) + torch.randn_like(y_0) * mask
             y_cond = torch.cat([y_cond, mask], dim=1)
-
 
         if self.sample_type == 'ddim': 
             y_t, ret_arr = self.sampler.sample(y_t=y_t,

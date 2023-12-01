@@ -3,7 +3,7 @@
     "seed" : -1, // random seed, seed <0 represents randomization not used 
 
     "path": { //set every part file path
-        "resume_state": "experiments/train_mldm_sz256_ch256/checkpoint/248" 
+        "resume_state": "experiments/train_mldm_sz256_ch256/checkpoint/288" 
     },
     "extra_class": {
         "huashang": "scratch", 

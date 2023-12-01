@@ -30,6 +30,8 @@ class MEngine():
         self.device = 'cpu'
         assert len(self.opt['gpu_ids']) <= 1, 'in inference, we only need one gpu'
         if len(self.opt['gpu_ids']) >= 1:
+            gpu_str = ','.join(str(x) for x in opt['gpu_ids'])
+            os.environ['CUDA_VISIBLE_DEVICES'] = gpu_str
             self.device = 'cuda:' + str(self.opt['gpu_ids'][0])
         if 'local_rank' not in opt:
             self.opt['local_rank'] = self.opt['global_rank'] = self.opt['gpu_ids'][0]
@@ -683,8 +685,8 @@ class MEngine():
 
     
 if __name__ == "__main__":
-    # config = './config/infer/infer_inpainting_mldm_ch256.json'    
-    config = './config/infer/infer_inpainting_tldm_ch256.json'  
+    config = './config/infer/infer_inpainting_mldm_ch256.json'    
+    # config = './config/infer/infer_inpainting_tldm_ch256.json'  
     engine = MEngine(config) 
 
     ## test for base
@@ -714,19 +716,19 @@ if __name__ == "__main__":
             src_imgs_list.append(imp)
     for imp in src_imgs_list:
         jsp = imp.replace('.jpg', '.json')
-        # new_img, new_info = engine.defect_selfaug(imp=imp,
-        #                                           jsp=jsp,
-        #                                           aug_type_prob={'re-generate':0.25,'defect2lp':0.25,'xy-shift':0.25,'flip':0.25},
-        #                                           ratio=0.2,
-        #                                           gd_w=0.0, 
-        #                                           SHOW=True,
-        #                                           mask_type='rect',
-        #                                           use_rectangle_labelme=False)
-        
-        new_img, new_info = engine.defect_transfer(imp=imp,
+        new_img, new_info = engine.defect_selfaug(imp=imp,
                                                   jsp=jsp,
+                                                  aug_type_prob={'re-generate':0.25,'defect2lp':0.25,'xy-shift':0.25,'flip':0.25},
+                                                  ratio=0.2,
+                                                  gd_w=0.0, 
                                                   SHOW=True,
-                                                  mask_type='rect')
+                                                  mask_type='rect',
+                                                  use_rectangle_labelme=False)
+        
+        # new_img, new_info = engine.defect_transfer(imp=imp,
+        #                                           jsp=jsp,
+        #                                           SHOW=True,
+        #                                           mask_type='rect')
 
     
 

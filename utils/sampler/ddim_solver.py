@@ -81,7 +81,7 @@ class DDIM_Solver:
         n = y_t.size(0)
 
         if mask is not None and y_0 is not None:
-            y_t = y_t * mask + y_0 * (1 - mask)
+            y_t = y_t * mask + y_0 * (1. - mask)
         ret_arr = y_t
         
         if gd_w > 0.0:
@@ -146,7 +146,7 @@ class DDIM_Solver:
                 c2 = (1 - at_prev).sqrt()
                 y_t = at_prev.sqrt() * y0_hat + c2 * et
 
-            if mask is not None  and y_0 is not None and i != self.time_seq[0]:
+            if mask is not None and y_0 is not None and i != self.time_seq[0]:
                 y_t = y_t * mask + y_0 * (1. - mask)   
 
             icount += 1
