@@ -703,7 +703,7 @@ if __name__ == "__main__":
     #                                     SHOW=True)
 
     ## test for self-aug
-    src_dir = '/home/data0/project-datasets/micro_o_628/datasets/train_val_data/train/train_O_crop1024_overlap1000'
+    src_dir = '/home/data0/temp/'
     src_imgs_list = list()
     for filepath, _, filenames in os.walk(src_dir):
         for filename in filenames:
@@ -718,7 +718,7 @@ if __name__ == "__main__":
         jsp = imp.replace('.jpg', '.json')
         new_img, new_info = engine.defect_selfaug(imp=imp,
                                                   jsp=jsp,
-                                                  aug_type_prob={'re-generate':0.25,'defect2lp':0.25,'xy-shift':0.25,'flip':0.25},
+                                                  aug_type_prob={'re-generate':0.0,'defect2lp':1.0,'xy-shift':0.0,'flip':0.0},
                                                   ratio=0.2,
                                                   gd_w=0.0, 
                                                   SHOW=True,
